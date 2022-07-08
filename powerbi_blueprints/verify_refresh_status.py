@@ -1,14 +1,3 @@
-"""Power BI - Verify Datasource Refresh Status
-User Inputs:
-
-Authentication
-Refresh ID
-Requirements:
-
-Verifies the specified dataset refresh was successfully refreshed.
-Should return separate statuses for things like "Unfinished, Success, Canceled, Errored, etc."
-Should use pickle variable from the "Trigger Dataset Refresh" if no refresh ID is provided.
-"""
 import argparse
 import sys
 import requests
@@ -30,6 +19,7 @@ def get_args():
     parser.add_argument('--refresh-id', dest='refresh_id', required=False)
     args = parser.parse_args()
     return args
+
 
 def get_sync_status(dataset_id, refresh_id, access_token):
     """
@@ -54,37 +44,46 @@ def get_sync_status(dataset_id, refresh_id, access_token):
     
 
 
-def handle_sync_run_data(sync_run_data):
+def handle_refresh_data(refresh_data):
     """
     Analyses sync run data to determine status and print sync run information
     
     Returns:
         status_code: Exit Status code detailing sync status
     """
-    status = sync_run_data['status']
-    sync_id = sync_run_data['sync_id']
-    if status == "completed":
+    status = refresh_data['status']
+    refresh_id = refresh_data['requestId']
+    if status == "Completed":
         print(
-            f"Sync {sync_id} completed successfully. ",
-            f"Completed at: {sync_run_data['completed_at']}"
+            f"Refresh {refresh_id} completed successfully. ",
+            f"Completed at: {refresh_data['endTime']}"
         )
-        status_code = errors.EXIT_CODE_STATUS_COMPLETED
+        status_code = errors.EXIT_CODE_FINAL_STATUS_SUCCESS
         
-    elif status == "working":
-        print(
-            f"Sync {sync_id} still Running. ",
-            f"Current records processed: {sync_run_data['records_processed']}"
-        )
-        status_code = errors.EXIT_CODE_STATUS_RUNNING
-    
-    elif status == "failed":
-        error_code = sync_run_data['error_code']
-        error_message = sync_run_data['error_message']
-        print(f"Sync {sync_id} failed. {error_code} {error_message}")
-        status_code = errors.EXIT_CODE_STATUS_FAILED
+    elif status == "Failed":
+        error_code = refresh_data['error_code']
+        error_message = refresh_data['error_message']
+        print(f"Refresh {refresh_id} failed. {error_code} {error_message}")
+        status_code = errors.EXIT_CODE_FINAL_STATUS_FAILED
+
+    elif status == "Unknown":
+        if refresh_data['extendedStatus'] == 'InProgress':
+            print(f"Refresh {refresh_id} still in progress...")
+            status_code = errors.EXIT_CODE_FINAL_STATUS_INCOMPLETE
+        elif refresh_data['extendedStatus'] == 'NotStarted':
+            print(f"{refresh_id} refresh procedure has not yet started")
+            status_code = errors.EXIT_CODE_FINAL_STATUS_NOT_STARTED
+
+    elif status == "Disabled":
+        print("Refresh {refresh_id} operation is disabled")
+        status_code = errors.EXIT_CODE_FINAL_STATUS_DISABLED
+
+    elif status == "Cancelled":
+        print("Refresh {refresh_id} operation was cancelled")
+        status_code = errors.EXIT_CODE_FINAL_STATUS_CANCELLED
         
     else:
-        print("An unknown error has occured with {sync_id}")
+        print("An unknown error has occured with {refresh_id}")
         print("Unknown Sync status: {status}")
         status_code = errors.EXIT_CODE_UNKNOWN_ERROR
     
@@ -93,23 +92,26 @@ def handle_sync_run_data(sync_run_data):
 
 def main():
     args = get_args()
-    access_token = args.access_token  
-    # create artifacts folder to save run id
-    base_folder_name = shipyard.logs.determine_base_artifact_folder(
-        'census')
-    artifact_subfolder_paths = shipyard.logs.determine_artifact_subfolders(
-        base_folder_name)
-    shipyard.logs.create_artifacts_folders(artifact_subfolder_paths)
+    tenant_id = args.tenant_id
+    client_id = args.client_id
+    client_secret = args.client_secret
+    dataset_id = args.dataset_id
     
-    # get sync run id variable from user or pickle file if not inputted
-    if args.sync_run_id:
-        sync_run_id = args.sync_run_id
+    # get access token
+    access_token = helpers.get_access_token(tenant_id, 
+                                            client_id, 
+                                            client_secret)
+    # fetch refresh data
+    artifacts_subfolders = helpers.artifact_subfolder_paths
+    if args.refresh_id:
+        refresh_id = args.refresh_id
     else:
-        sync_run_id = shipyard.logs.read_pickle_file(
-            artifact_subfolder_paths, 'sync_run_id')
+        refresh_id = shipyard.logs.read_pickle_file(
+            artifacts_subfolders, 'refresh_id')
+    
     # run check sync status
-    sync_run_data = get_sync_status(sync_run_id, access_token)
-    exit_code_status = handle_sync_run_data(sync_run_data)
+    refresh_data = get_sync_status(dataset_id, refresh_id, access_token)
+    exit_code_status = handle_refresh_data(refresh_data)
     sys.exit(exit_code_status)
 
 
