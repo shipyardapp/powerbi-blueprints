@@ -12,14 +12,13 @@ Limitations:
 Should only refresh one datasource
 """
 import sys
-import requests
 from azure.identity import ClientSecretCredential
 from azure.core.exceptions import ClientAuthenticationError
 import shipyard_utils as shipyard
-#try:
-#    import errors
-#except BaseException:
-#    from . import errors
+try:
+    import errors
+except BaseException:
+    from . import errors
 
 
 # create Artifacts folders
@@ -46,4 +45,4 @@ def get_access_token(tenant, client, client_secret):
         return access_token
     except (ValueError, ClientAuthenticationError):
         print('Failed to Authenticate:please check your credentials')
-        sys.exit(1)
+        sys.exit(errors.EXIT_CODE_INVALID_CREDENTIALS)
